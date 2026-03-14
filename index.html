@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Videy.co Downloader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        video { max-height: 520px; }
+    </style>
+</head>
+<body class="bg-zinc-950 text-white min-h-screen">
+<div class="max-w-4xl mx-auto p-6">
+    <div class="flex items-center gap-3 mb-8">
+        <div class="w-12 h-12 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-3xl flex items-center justify-center text-3xl">📹</div>
+        <div>
+            <h1 class="text-4xl font-bold">Videy.co Downloader</h1>
+            <p class="text-zinc-400">Auto-extract from X post URL • Play &amp; download instantly</p>
+        </div>
+    </div>
+
+    <!-- X URL input -->
+    <div class="bg-zinc-900 rounded-3xl p-8 mb-8">
+        <div class="text-sm font-medium text-zinc-400 mb-2">Step 1: Paste X post URL</div>
+        <div class="flex gap-3">
+            <input id="xUrl" type="text" 
+                   class="flex-1 bg-black border border-zinc-700 focus:border-violet-500 rounded-2xl px-6 py-4 text-sm outline-none font-mono"
+                   placeholder="https://x.com/aynzyu/status/2032540159435330036">
+            <button onclick="fetchFromX()" 
+                    class="bg-violet-600 hover:bg-violet-500 px-8 rounded-2xl font-semibold flex items-center gap-2 transition-colors">
+                🚀 FETCH VIDEOS
+            </button>
+        </div>
+        
+        <div class="mt-6 text-xs text-amber-400 flex items-center gap-2">
+            <span class="text-lg">💡</span>
+            Works with any public X post. Uses free FixTweet API (no login needed).
+        </div>
+    </div>
+
+    <!-- Manual fallback -->
+    <div onclick="toggleManual()" id="manualBtn"
+         class="cursor-pointer text-center text-sm text-zinc-500 hover:text-zinc-400 transition-colors mb-8">
+        Or paste full post text manually →
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="hidden">
+        <div class="flex justify-between mb-6">
+            <h2 class="text-2xl font-semibold">Found <span id="count" class="text-violet-400"></span> videos</h2>
+            <button onclick="downloadAll()" class="bg-emerald-600 hover:bg-emerald-500 px-6 py-2 rounded-2xl flex items-center gap-2 text-sm">
+                ⬇️ Download All
+            </button>
+        </div>
+        <div id="videoList" class="space-y-10"></div>
+    </div>
+
+    <div id="emptyState" class="text-center py-20 text-zinc-500">
+        <div class="text-6xl mb-6">📼</div>
+        <p class="text-xl">Paste an X post URL above</p>
+        <p class="text-xs mt-3">Try the sample one you shared!</p>
+    </div>
+</div>
+
+<script>
+    async function fetchFromX() {
+        let url = document.getElementById('xUrl').value.trim();
+        if (!url) return alert("Paste an X post URL first");
+
+        const btn = event.currentTarget;
+        btn.innerHTML = `Fetching...`;
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(`/api/fetch-videy?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+
+            if (!data.success || data.links.length === 0) {
+                alert("No videy.co links found in that post.\n\nTry another post or use manual mode.");
+                return;
+            }
+
+            renderVideos(data.links);
+        } catch (e) {
+            alert("Failed to fetch tweet. X might be blocking or post is private.");
+        } finally {
+            btn.innerHTML = `🚀 FETCH VIDEOS`;
+            btn.disabled = false;
+        }
+    }
+
+    function renderVideos(urls) {
+        const container = document.getElementById('videoList');
+        container.innerHTML = '';
+        
+        urls.forEach(url => {
+            const card = document.createElement('div');
+            card.className = 'bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-700';
+            const name = url.split('/').pop().split('?')[0] || 'video.mp4';
+            
+            card.innerHTML = `
+                <div class="p-5 bg-black flex justify-between items-center border-b border-zinc-700">
+                    <div class="font-mono text-xs text-zinc-400 truncate max-w-xs">${name}</div>
+                    <a href="${url}" target="_blank" class="text-violet-400 text-[10px] underline">open raw</a>
+                </div>
+                <div class="p-5">
+                    <video controls class="w-full rounded-2xl" preload="metadata">
+                        <source src="${url}" type="video/mp4">
+                    </video>
+                </div>
+                <div class="p-5 bg-black flex gap-3 border-t border-zinc-700">
+                    <button onclick="downloadOne('${url}','${name}')" 
+                            class="flex-1 bg-white text-black font-bold py-4 rounded-2xl">⬇️ DOWNLOAD</button>
+                    <button onclick="this.closest('.bg-zinc-900').remove()" 
+                            class="px-6 text-red-400">✕</button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+
+        document.getElementById('count').textContent = `(${urls.length})`;
+        document.getElementById('results').classList.remove('hidden');
+        document.getElementById('emptyState').classList.add('hidden');
+    }
+
+    function downloadOne(url, name) {
+        const a = document.createElement('a');
+        a.href = url; a.download = name; a.click();
+    }
+
+    function downloadAll() {
+        document.querySelectorAll('#videoList video source').forEach((s,i) => {
+            const url = s.src;
+            const name = url.split('/').pop().split('?')[0] || `video${i+1}.mp4`;
+            setTimeout(() => downloadOne(url, name), i*250);
+        });
+    }
+
+    function toggleManual() {
+        const text = prompt("Paste the full tweet text here (or links):");
+        if (!text) return;
+        const regex = /https?:\/\/cdn2\.(videy\.co|vldey\.cfd)[^\s"']+/gi;
+        const links = text.match(regex) || [];
+        if (links.length) renderVideos([...new Set(links)]);
+        else alert("No videy links found in the text.");
+    }
+
+    // Auto-load your sample
+    window.onload = () => {
+        document.getElementById('xUrl').value = "https://x.com/aynzyu/status/2032540159435330036";
+        // Optional: auto fetch on load (uncomment if you want)
+        // fetchFromX();
+    };
+</script>
+</body>
+</html>

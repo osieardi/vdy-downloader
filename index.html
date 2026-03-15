@@ -94,10 +94,13 @@
                 <button id="copyAll" class="flex-1 sm:flex-none bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-6 py-4 rounded-xl transition">
                     📋 Copy Semua URL
                 </button>
+                <button id="clearResults" class="flex-1 sm:flex-none bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-6 py-4 rounded-xl transition">
+                    🗑️ Clear
+                </button>
             </div>
         </div>
 
-        <div id="videoContainer" class="space-y-6"></div>
+        <div id="videoContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
     </section>
 
     <section id="empty" class="text-center py-16 text-zinc-500">
@@ -132,6 +135,7 @@
         document.getElementById('clearBtn').addEventListener('click', clearInput);
         document.getElementById('downloadAll').addEventListener('click', downloadAll);
         document.getElementById('copyAll').addEventListener('click', copyAllUrls);
+        document.getElementById('clearResults').addEventListener('click', clearResults);
         document.getElementById('themeToggle').addEventListener('click', toggleTheme);
 
         applyStoredTheme();
@@ -167,36 +171,15 @@ cdn2.vldey.cfd/xxx (ini diabaikan)`;
     }
 
     function extractVideos() {
-        const text = state.textarea.value.trim();
-        if (!text) {
+        const text = state.textarea.value;
+        if (!text.trim()) {
             showToast('Paste teks dulu ya.', 'warning');
             return;
         }
 
-        const cleaned = text
-            .replace(/…|\.{3,}/g, '')
-            .replace(/\s+$/gm, '');
-
-        const regex = /(?:https?:\/\/)?cdn2\.videy\.co\/[^\s"'<>)]+(?:\.(?:mp4|webm|mkv|mov))?(\?[^\s]*)?/gi;
-
-        const matches = [];
-        let match;
-        while ((match = regex.exec(cleaned)) !== null) {
-            let url = match[0];
-            if (!url.startsWith('http')) url = 'https://' + url;
-
-            if (!/\.(mp4|webm|mkv|mov)$/i.test(url.split('?')[0])) {
-                const [base, query] = url.split('?');
-                url = base + '.mp4' + (query ? '?' + query : '');
-            }
-
-            matches.push(url);
-        }
-
-        const urls = [...new Set(matches.filter(u => u.includes('cdn2.videy.co')))] ;
-
-        if (urls.length === 0) {
-            showToast('Tidak ditemukan link videy.co yang valid. Pastikan teks berisi "cdn2.videy.co".', 'error');
+        const urls = parseVideyUrls(text);
+        if (!urls.length) {
+            showToast('Tidak ditemukan link cdn2.videy.co yang valid. Pastikan teks berisi "cdn2.videy.co".', 'error');
             return;
         }
 
@@ -204,35 +187,79 @@ cdn2.vldey.cfd/xxx (ini diabaikan)`;
         showToast(`${urls.length} video ditemukan.`, 'success');
     }
 
+    function parseVideyUrls(rawText) {
+        const cleaned = rawText.replace(/…|\.{3,}/g, '').trim();
+        const regex = /(?:https?:\/\/)?cdn2\.videy\.co\/[\w\-\.\/%]+/gi;
+
+        const found = [];
+        let match;
+
+        while ((match = regex.exec(cleaned)) !== null) {
+            const normalized = normalizeVideyUrl(match[0]);
+            if (normalized) found.push(normalized);
+        }
+
+        return [...new Set(found)];
+    }
+
+    function normalizeVideyUrl(rawUrl) {
+        if (!rawUrl) return null;
+
+        let url = rawUrl.trim();
+        url = url.replace(/^["'(<\[]+|["'\)>\].,!?]+$/g, '');
+
+        if (!url.toLowerCase().startsWith('http')) {
+            url = `https://${url}`;
+        }
+
+        let parsed;
+        try {
+            parsed = new URL(url);
+        } catch {
+            return null;
+        }
+
+        if (parsed.hostname !== 'cdn2.videy.co') return null;
+
+        const hasExt = ['mp4', 'webm', 'mkv', 'mov'].some(ext => parsed.pathname.toLowerCase().endsWith(`.${ext}`));
+        if (!hasExt) {
+            parsed.pathname = parsed.pathname.replace(/\/?$/, '.mp4');
+        }
+
+        return parsed.toString();
+    }
+
     function renderVideos(urls) {
         state.videoContainer.innerHTML = '';
 
         urls.forEach((url, i) => {
             const filename = url.split('/').pop().split('?')[0] || `videy-${i + 1}.mp4`;
-
             const card = document.createElement('article');
             card.className = 'bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 shadow-md';
 
             card.innerHTML = `
-                <div class="p-4 bg-black/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800">
-                    <div class="flex-1 min-w-0">
-                        <p class="font-semibold text-zinc-100 truncate">${filename}</p>
-                        <a href="${url}" target="_blank" class="text-xs text-brand-200 hover:underline">Buka raw video</a>
+                <div class="p-4 bg-black/60 border-b border-zinc-800">
+                    <p class="font-semibold text-zinc-100 truncate">${filename}</p>
+                    <a href="${url}" target="_blank" class="text-xs text-brand-200 hover:underline">Buka raw video</a>
+                </div>
+                <div class="p-4 space-y-4">
+                    <div class="relative aspect-video rounded-xl overflow-hidden bg-black">
+                        <video playsinline muted crossorigin="anonymous" preload="metadata" class="w-full h-full object-cover" src="${url}"></video>
+                        <button type="button" class="play-overlay absolute inset-0 flex items-center justify-center text-4xl text-white/90 bg-black/20 opacity-0 hover:opacity-100 transition">
+                            ▶️
+                        </button>
                     </div>
-                    <div class="flex gap-2">
-                        <button type="button" data-url="${url}" data-filename="${filename}" class="download-btn flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold transition">
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <button type="button" data-url="${url}" data-filename="${filename}" class="download-btn flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white px-4 py-3 rounded-xl font-semibold transition">
                             ⬇️ Download
                         </button>
-                        <button type="button" class="remove-btn px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200">
+                        <button type="button" class="play-toggle-btn flex-1 sm:flex-none bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-4 py-3 rounded-xl transition">
+                            ▶️ Play
+                        </button>
+                        <button type="button" class="remove-btn flex-1 sm:flex-none px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200">
                             ✕ Hapus
                         </button>
                     </div>
-                </div>
-                <div class="p-4">
-                    <video controls preload="metadata" class="w-full rounded-xl bg-black aspect-video">
-                        <source src="${url}" type="video/mp4" />
-                        Video tidak bisa diputar di browser ini.
-                    </video>
                 </div>
             `;
 
@@ -244,9 +271,40 @@ cdn2.vldey.cfd/xxx (ini diabaikan)`;
         state.empty.classList.add('hidden');
 
         state.videoContainer.querySelectorAll('.download-btn').forEach(btn => {
+            btn.addEventListener('click', () => downloadVideo(btn.dataset.url, btn.dataset.filename));
+        });
+
+        state.videoContainer.querySelectorAll('.play-overlay').forEach(btn => {
             btn.addEventListener('click', () => {
-                downloadVideo(btn.dataset.url, btn.dataset.filename);
+                const video = btn.closest('article')?.querySelector('video');
+                if (!video) return;
+                video.play();
             });
+        });
+
+        state.videoContainer.querySelectorAll('.play-toggle-btn').forEach(btn => {
+            const article = btn.closest('article');
+            const video = article?.querySelector('video');
+            if (!video) return;
+
+            const updateLabel = () => {
+                btn.textContent = video.paused ? '▶️ Play' : '⏸️ Pause';
+            };
+
+            btn.addEventListener('click', () => {
+                if (video.paused) {
+                    video.play();
+                } else {
+                    video.pause();
+                }
+            });
+
+            video.addEventListener('play', updateLabel);
+            video.addEventListener('pause', updateLabel);
+            updateLabel();
+
+            // Try to generate a thumbnail poster from the first frame
+            setVideoPosterFromFrame(video);
         });
 
         state.videoContainer.querySelectorAll('.remove-btn').forEach(btn => {
@@ -278,23 +336,89 @@ cdn2.vldey.cfd/xxx (ini diabaikan)`;
     }
 
     function downloadAll() {
-        const sources = Array.from(state.videoContainer.querySelectorAll('video source'));
-        if (!sources.length) {
+        const items = Array.from(state.videoContainer.querySelectorAll('.download-btn')).map(btn => ({
+            url: btn.dataset.url,
+            filename: btn.dataset.filename,
+        }));
+
+        if (!items.length) {
             showToast('Tidak ada video untuk di-download.', 'warning');
             return;
         }
 
-        sources.forEach((source, i) => {
-            const url = source.src;
-            const name = url.split('/').pop().split('?')[0] || `videy-${i + 1}.mp4`;
-            setTimeout(() => downloadVideo(url, name), i * 600);
-        });
+        const progress = createProgressToast(items.length);
 
-        showToast('Download semua dimulai. Perhatikan tab baru yang terbuka.', 'info');
+        items.forEach(({ url, filename }, i) => {
+            setTimeout(() => {
+                downloadVideo(url, filename);
+                progress.increment();
+            }, i * 600);
+        });
+    }
+
+    function createProgressToast(total) {
+        let completed = 0;
+        const toast = document.createElement('div');
+        toast.className = 'flex items-center justify-between gap-4 px-4 py-3 rounded-xl shadow-lg bg-zinc-900 text-zinc-100';
+
+        const label = document.createElement('p');
+        label.className = 'text-sm';
+        label.textContent = `Downloading ${completed}/${total}...`;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'text-xl leading-none font-bold hover:opacity-80';
+        closeBtn.textContent = '×';
+        closeBtn.addEventListener('click', () => toast.remove());
+
+        toast.appendChild(label);
+        toast.appendChild(closeBtn);
+
+        const container = document.getElementById('toastContainer');
+        container.appendChild(toast);
+
+        const timer = setTimeout(() => toast.remove(), 12000);
+
+        return {
+            increment() {
+                completed += 1;
+                label.textContent = `Downloading ${completed}/${total}...`;
+                if (completed === total) {
+                    label.textContent = `Download dimulai (${total} item).`;
+                    clearTimeout(timer);
+                    setTimeout(() => toast.remove(), 5000);
+                }
+            },
+        };
+    }
+
+    function setVideoPosterFromFrame(video) {
+        if (!video || !video.src) return;
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const capture = () => {
+            if (!video.videoWidth || !video.videoHeight) return;
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            try {
+                video.setAttribute('poster', canvas.toDataURL('image/jpeg', 0.75));
+            } catch {
+                // ignore CORS failures
+            }
+
+            video.removeEventListener('loadeddata', capture);
+        };
+
+        video.addEventListener('loadeddata', capture);
     }
 
     async function copyAllUrls() {
-        const urls = Array.from(state.videoContainer.querySelectorAll('video source')).map(s => s.src);
+        const urls = Array.from(state.videoContainer.querySelectorAll('.download-btn')).map(btn => btn.dataset.url);
         if (!urls.length) {
             showToast('Belum ada URL untuk disalin.', 'warning');
             return;
@@ -311,9 +435,13 @@ cdn2.vldey.cfd/xxx (ini diabaikan)`;
     function clearInput() {
         state.textarea.value = '';
         state.textarea.style.height = 'auto';
+        clearResults();
+    }
+
+    function clearResults() {
+        state.videoContainer.innerHTML = '';
         state.results.classList.add('hidden');
         state.empty.classList.remove('hidden');
-        state.videoContainer.innerHTML = '';
         state.count.textContent = '0';
     }
 
